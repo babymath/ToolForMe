@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Automatic Text Formatter</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap');
+    body { font-family: 'Inter', sans-serif; background-color: #f3f4f6; }
+    .container { max-width: 800px; }
+    .inter-font { font-family: 'Inter', sans-serif; }
+  </style>
+</head>
+<body class="bg-gray-100 flex items-center justify-center min-h-screen p-4">
+
+  <div class="container bg-white p-8 rounded-2xl shadow-lg border border-gray-200 w-full">
+    <h1 class="text-3xl font-bold text-center text-gray-800 mb-6">Automatic Text Formatter</h1>
+    <p class="text-center text-gray-600 mb-8">
+      Paste your text below. It will automatically format and copy to your clipboard when you paste.
+    </p>
+
+    <div class="relative mb-6">
+      <label for="inputText" class="block text-lg font-semibold text-gray-700 mb-2">Original Text</label>
+      <textarea id="inputText" rows="10" placeholder="Paste your text here..."
+        class="inter-font w-full p-4 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 transition"></textarea>
+      <div id="messageBox" aria-live="polite"
+        class="absolute top-4 right-4 bg-green-600 text-white px-4 py-2 rounded-full text-sm opacity-0 transition-opacity duration-300 pointer-events-none">
+        Formatted text copied!
+      </div>
+    </div>
+
+    <div class="bg-gray-50 p-6 rounded-lg border border-gray-200 mb-4">
+      <label for="outputBox" class="block text-lg font-semibold text-gray-700 mb-2">Formatted Text (Preview)</label>
+      <div id="outputBox" class="inter-font w-full p-4 bg-white border border-gray-300 rounded-lg shadow-inner min-h-[100px] whitespace-pre-wrap break-words">
+        Your formatted text will appear here.
+      </div>
+    </div>
+
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <button id="copyBtn"
+        class="w-full bg-blue-600 text-white font-semibold py-3 rounded-xl shadow hover:bg-blue-700 transition">
+        Copy Formatted Text
+      </button>
+      <button id="pdfBtn"
+        class="w-full bg-green-600 text-white font-semibold py-3 rounded-xl shadow hover:bg-green-700 transition">
+        Download as PDF
+      </button>
+    </div>
+  </div>
+
+  <script>
+    const inputText = document.getElementById('inputText');
+    const outputBox = document.getElementById('outputBox');
+    const messageBox = document.getElementById('messageBox');
+    const copyBtn = document.getElementById('copyBtn');
+    const pdfBtn = document.getElementById('pdfBtn');
+
+    async function copyFormattedText(text) {
+      try {
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          await navigator.clipboard.writeText(text);
+        } else {
+          const tempTextarea = document.createElement('textarea');
+          tempTextarea.style.position = 'absolute';
+          tempTextarea.style.left = '-9999px';
+          tempTextarea.value = text;
+          document.body.appendChild(tempTextarea);
+          tempTextarea.select();
+          document.execCommand('copy');
+          document.body.removeChild(tempTextarea);
+        }
+        messageBox.classList.add('opacity-100');
+        setTimeout(() => messageBox.classList.remove('opacity-100'), 2000);
+      } catch (err) {
+        console.error('Failed to copy text: ', err);
+      }
+    }
+
+    function formatText(originalText) {
+      const sentences = originalText
+        .replace(/(\r\n|\n|\r)/gm, ' ')
+        .split(/(?<=[.?!])\s+/)
+        .filter(sentence => sentence.trim().length > 0);
+
+      let formattedText = '';
+      let formattedHTML = '';
+
+      sentences.forEach((sentence, index) => {
+        let cleanSentence = sentence.trim().replace(/[.?!]+$/, '');
+        if (cleanSentence) {
+          const line = `(${index + 1}) ${cleanSentence}`;
+          formattedText += `${line}. `;
+          formattedHTML += `<b>(${index + 1})</b> ${cleanSentence}.<br><br>`;
+        }
+      });
+
+      outputBox.innerHTML = formattedHTML || 'Your formatted text will appear here.';
+      return formattedText.trim();
+    }
+
+    inputText.addEventListener('paste', (event) => {
+      event.preventDefault();
+      const pastedText = event.clipboardData?.getData('text') || window.clipboardData?.getData('Text') || '';
+      const formatted = formatText(pastedText);
+      copyFormattedText(formatted);
+    });
+
+    inputText.addEventListener('input', () => {
+      formatText(inputText.value);
+    });
+
+    copyBtn.addEventListener('click', () => {
+      const formatted = formatText(inputText.value);
+      if (formatted) copyFormattedText(formatted);
+    });
+
+    // PDF Download with Title + Line Breaks
+    pdfBtn.addEventListener('click', () => {
+      const { jsPDF } = window.jspdf;
+      const doc = new jsPDF({ unit: "pt", format: "a4" });
+
+      const formatted = formatText(inputText.value);
+      if (!formatted) return;
+
+      // Ask user for Title and Line Break Number
+      const title = prompt("Enter PDF Title:", "My Formatted Document") || "Formatted Document";
+      let breakAfter = parseInt(prompt("Enter line break interval (e.g., 20):", "20"));
+      if (isNaN(breakAfter) || breakAfter < 1) breakAfter = 20;
+
+      const pageWidth = doc.internal.pageSize.getWidth();
+      const pageHeight = doc.internal.pageSize.getHeight();
+      const margin = 40;
+
+      doc.setFont("times", "bold");
+      doc.setFontSize(16);
+      doc.text(title, pageWidth / 2, 40, { align: "center" });
+
+      doc.setFont("times", "normal");
+      doc.setFontSize(12);
+
+      const splitText = doc.splitTextToSize(formatted, pageWidth - margin * 2);
+      let y = 70;
+      let lineCount = 0;
+
+      splitText.forEach(line => {
+        doc.text(line, margin, y, { align: "justify", maxWidth: pageWidth - margin * 2 });
+        y += 18;
+        lineCount++;
+
+        // Add line break as blank space after X lines
+        if (lineCount % breakAfter === 0) {
+          y += 18; // extra blank line
+        }
+
+        if (y > pageHeight - 40) {
+          doc.addPage();
+          y = 60;
+        }
+      });
+
+      doc.save(title.replace(/\s+/g, "_") + ".pdf");
+    });
+  </script>
+</body>
+</html>
